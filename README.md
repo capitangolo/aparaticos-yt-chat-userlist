@@ -6,7 +6,7 @@ We initially used this to interact with our audience in [our livestreams](https:
 
 It's still a bit untidy, srry :S.
 
-## Installation
+## Installation
 
 This uses python3. Install libs with:
 
