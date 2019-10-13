@@ -5,109 +5,31 @@ import json
 import os
 import signal
 import sys
-import time
 
 from apiclient.errors import HttpError
 from oauth2client.tools import argparser
-from yt_chat import google_api
+from yt_chat import google_api, youtube_api
+from yt_chat.plugins import raffle
 
-## --------------
-## TODO: Move this to a 'youtube-api' module.
-
-def list_scheduled_broadcasts(youtube):
-    broadcasts = list_broadcasts(youtube)
-
-    scheduled_broadcasts = []
-
-    for broadcast in broadcasts:
-        if not 'status' in broadcast.keys():
-            continue
-        status = broadcast['status']
-
-        if not 'lifeCycleStatus' in status.keys():
-            continue
-        lifeCycleStatus = status['lifeCycleStatus']
-
-        nonvalid_status = ['complete','revoked']
-        if lifeCycleStatus in nonvalid_status:
-            continue
-
-        scheduled_broadcasts.append(broadcast)
-    return scheduled_broadcasts
-
-def list_broadcasts(youtube):
-    broadcasts = []
-
-    list_streams_request = youtube.liveBroadcasts().list(
-        part='id,snippet,contentDetails,status',
-        mine=True,
-        maxResults=50
-    )
-
-    while list_streams_request:
-        list_streams_response = list_streams_request.execute()
-
-        for stream in list_streams_response.get('items', []):
-            broadcasts.append(stream)
-
-        list_streams_request = youtube.liveBroadcasts().list_next(
-            list_streams_request, list_streams_response)
-
-    return broadcasts
-
-def list_chatmessages_users(youtube, liveChatId):
-    list_streams_request = youtube.liveChatMessages().list(
-        liveChatId = liveChatId,
-        part="id,snippet,authorDetails"
-    )
-
-    while list_streams_request:
-        list_streams_response = list_streams_request.execute()
-
-        for chatMessage in list_streams_response.get("items", []):
-            aparaticos_process_chatMessage(chatMessage)
-
-        time.sleep(list_streams_response['pollingIntervalMillis'] / 1000.0)
-
-        list_streams_request = youtube.liveChatMessages().list_next(
-            list_streams_request, list_streams_response)
 
 def signal_handler(sig, frame):
     sys.exit(0)
 
-##
-## --------------
 
+event_listeners = {}
 
-## --------------
-## All this is specific to our livestream.
-# TODO: Move this to plugins
-# TODO: Use output files instead of the console
-def aparaticos_process_chatMessage(chatMessage):
-    author_name = chatMessage['authorDetails']['displayName']
-    if not author_name in users:
-        global user_counter
-        user_counter += 1
-        names.append({"id": user_counter, "user": author_name})
-        json_file = './sorteo.json'
-        with open(json_file, 'w') as outfile:
-            json.dump(names, outfile)
-        users.add(author_name)
-        print('{}  {}'.format(user_counter, author_name))
+EVENTS = [
+    'process_chatMessage'
+]
 
+def load_plugin(plugin, config):
+    plugin.load(config)
 
-
-users = set()
-#users.add(u'Víctor Jiménez Cerrada')
-#users.add(u'Aparaticos')
-#users.add(u'daniel falcon')
-
-user_counter = 0
-
-names = []
-
-##
-## --------------
+    # register in events
+    for event in EVENTS:
+        if hasattr(plugin, event):
+            event_listener = event_listeners[event]
+            event_listener.add(getattr(plugin, event))
 
 if __name__ == "__main__":
 # This will be used… eventually…
@@ -120,29 +42,25 @@ if __name__ == "__main__":
     args = argparser.parse_args()
     signal.signal(signal.SIGINT, signal_handler)
 
-## --------------
-## All this is specific to our livestream.
-# TODO: Move this to plugins
-    json_file = './sorteo.json'
-    if os.path.isfile(json_file):
-        with open(json_file) as json_file:
-            data = json.load(json_file)
-            names = data
+    # Load plugins
+    plugins = [raffle] # TODO: Load from plugin module.
+    config = {
+        'yt_chat.plugins.raffle': {
+            'ignore_users': ['Víctor Jiménez Cerrada', 'Aparaticos', 'daniel falcon']
+        }
+    }
+    for event in EVENTS:
+        if event not in event_listeners.keys():
+            event_listeners[event] = set()
+    for plugin in plugins:
+        load_plugin(plugin, config[raffle.__name__])
 
-    for name in names:
-        global user_couner
-        user_counter += 1
-        users.add(name['user'])
-        print('{}  {}'.format(name['id'], name['user']))
-
-##
-## --------------
-
-    print('Fetching your youtube livestreams, wait a bit…\n')
+    # Load Streams
+    print('Fetching your youtube livestreams, wait a bit…')
     youtube = google_api.get_authenticated_service(args)
 
     try:
-        broadcasts = list_scheduled_broadcasts(youtube)
+        broadcasts = youtube_api.list_scheduled_broadcasts(youtube, event_listeners)
 
         print('\nSelect stream to manage and press enter:\n')
         i = -1
@@ -174,7 +92,7 @@ if __name__ == "__main__":
         print('\nChat:')
 
         liveChat = broadcast['snippet']['liveChatId']
-        list_chatmessages_users(youtube, liveChat)
+        youtube_api.list_chatmessages_users(youtube, liveChat, event_listeners)
     except HttpError as e:
         print("An HTTP error %d occurred:\n%s" % (e.resp.status, e.content))
 

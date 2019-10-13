@@ -50,14 +50,13 @@ https://developers.google.com/api-client-library/python/guide/aaa_client_secrets
                                    CLIENT_SECRETS_FILE))
 
 def get_authenticated_service(args):
-    flow = flow_from_clientsecrets(CLIENT_SECRETS_FILE,
-        scope=YOUTUBE_READONLY_SCOPE,
-        message=MISSING_CLIENT_SECRETS_MESSAGE)
-
     storage = Storage("%s-oauth2.json" % sys.argv[0])
     credentials = storage.get()
 
     if credentials is None or credentials.invalid:
+        flow = flow_from_clientsecrets(CLIENT_SECRETS_FILE,
+            scope=YOUTUBE_READONLY_SCOPE,
+            message=MISSING_CLIENT_SECRETS_MESSAGE)
         credentials = run_flow(flow, storage, args)
 
     return build(YOUTUBE_API_SERVICE_NAME, YOUTUBE_API_VERSION,
